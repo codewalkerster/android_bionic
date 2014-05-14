@@ -53,6 +53,9 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define PLD_OFS	8
+#define DST_ALIGN_BOUND	(32*1024)
+
 ENTRY(MEMCPY_BASE)
         .cfi_startproc
         .save   {r0, lr}
@@ -76,8 +79,8 @@ ENTRY(MEMCPY_BASE)
 
         // TODO: The aligned copy code is extremely slow copying some large
         //       buffers so always go through the unaligned path for now.
-        //cmp     r2, #832
-        //bge     .L_check_alignment
+        cmp     r2, #832
+        bge     .L_check_alignment
 
 .L_copy_unknown_alignment:
         // Unknown alignment of src and dst.
@@ -111,19 +114,46 @@ ENTRY(MEMCPY_BASE)
         // Copies 8 bytes, dst 64 bits aligned before, at least 128 bits after.
         vld1.8      {d0}, [r1]!
         vst1.8      {d0}, [r0, :64]!
+2:
+	subs	r2, r2, #128
+	blo	3f
 
-2:      // Make sure we have at least 64 bytes to copy.
-        subs        r2, r2, #64
-        blo         2f
+1:	// The main loop copies 128 bytes at a time.
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	subs	r2, r2, #128
+	bge	1b
 
-1:      // The main loop copies 64 bytes at a time.
-        vld1.8      {d0  - d3},   [r1]!
-        vld1.8      {d4  - d7},   [r1]!
-        pld         [r1, #(64*4)]
-        subs        r2, r2, #64
-        vst1.8      {d0  - d3},   [r0, :128]!
-        vst1.8      {d4  - d7},   [r0, :128]!
-        bhs         1b
+	adds	r2, #128
+	beq	.L_copy_done_lt_832
+	sub	r2, #128
+3:
+	adds	r2, r2, #64
+	blo	2f
+
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	sub	r2, r2, #64
 
 2:      // Fix-up the remaining count and make sure we have >= 32 bytes left.
         adds        r2, r2, #32
@@ -162,6 +192,7 @@ ENTRY(MEMCPY_BASE)
         strbcs      ip, [r0], #1
         strbcs      lr, [r0]
 
+.L_copy_done_lt_832:
         pop         {r0, pc}
 
 .L_check_alignment:
@@ -189,141 +220,228 @@ ENTRY(MEMCPY_BASE_ALIGNED)
         .cfi_adjust_cfa_offset 8
         .cfi_rel_offset r4, 0
         .cfi_rel_offset r5, 4
-        strd    r6, r7, [sp, #-8]!
-        .save   {r6, r7}
-        .cfi_adjust_cfa_offset 8
-        .cfi_rel_offset r6, 0
-        .cfi_rel_offset r7, 0
-        strd    r8, r9, [sp, #-8]!
-        .save   {r8, r9}
-        .cfi_adjust_cfa_offset 8
-        .cfi_rel_offset r8, 0
-        .cfi_rel_offset r9, 4
 
-        // Optimized for already aligned dst code.
-        ands    ip, r0, #3
-        bne     .L_dst_not_word_aligned
+	pld	[r1, #(64*1)]
+	pld	[r1, #(64*2)]
+	pld	[r1, #(64*3)]
 
-.L_word_aligned:
-        // Align the destination buffer to 8 bytes, to make sure double
-        // loads and stores don't cross a cache line boundary,
-        // as they are then more expensive even if the data is in the cache
-        // (require two load/store issue cycles instead of one).
-        // If only one of the buffers is not 8 bytes aligned,
-        // then it's more important to align dst than src,
-        // because there is more penalty for stores
-        // than loads that cross a cacheline boundary.
-        // This check and realignment are only done if there is >= 832
-        // bytes to copy.
+	mov	r3, r2		@ backup original size
 
-        // Dst is word aligned, but check if it is already double word aligned.
-        ands    r3, r0, #4
-        beq     1f
-        ldr     r3, [r1], #4
-        str     r3, [r0], #4
-        sub     r2, #4
+	cmp	r2, #DST_ALIGN_BOUND
+	blt	.L_dst_aligned_done
 
-1:      // Can only get here if > 64 bytes to copy, so don't do check r2.
-        sub     r2, #64
+	ands	r4, r0, 63
+	bne	.L_dst_not_64_aligned
 
-2:      // Every loop iteration copies 64 bytes.
-        .irp    offset, #0, #8, #16, #24, #32
-        ldrd    r4, r5, [r1, \offset]
-        strd    r4, r5, [r0, \offset]
-        .endr
+.L_dst_aligned_done:
+	cmp	r2, 0
+	beq	.L_copy_done
 
-        ldrd    r4, r5, [r1, #40]
-        ldrd    r6, r7, [r1, #48]
-        ldrd    r8, r9, [r1, #56]
+	sub	r4, r2, (128*PLD_OFS)
+	cmp	r4, 128
+	blt	.L_no_pld_copy
 
-        // Keep the pld as far from the next load as possible.
-        // The amount to prefetch was determined experimentally using
-        // large sizes, and verifying the prefetch size does not affect
-        // the smaller copies too much.
-        // WARNING: If the ldrd and strd instructions get too far away
-        //          from each other, performance suffers. Three loads
-        //          in a row is the best tradeoff.
-        pld     [r1, #(64*16)]
-        strd    r4, r5, [r0, #40]
-        strd    r6, r7, [r0, #48]
-        strd    r8, r9, [r0, #56]
+	cmp	r3, #(64*1024)
+	beq	.L_cross_copy
 
-        add     r0, r0, #64
-        add     r1, r1, #64
-        subs    r2, r2, #64
-        bge     2b
+.L_normal_copy:
+	pld	[r1, #(64*4)]
+	pld	[r1, #(64*5)]
+	pld	[r1, #(64*6)]
+	pld	[r1, #(64*7)]
+	pld	[r1, #(64*8)]
 
-        // Fix-up the remaining count and make sure we have >= 32 bytes left.
-        adds    r2, r2, #32
-        blo     4f
+	sub     r4, #128
+2:
+	vld1.64	{d0-d1}, [r1]!	// r1+=16
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	pld     [r1, #(64*PLD_OFS)]
+	vld1.64	{d0-d1}, [r1]!	// r1+=16
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	pld     [r1, #(64*PLD_OFS)]
+	subs    r4, r4, #128
+	bge     2b
+	add	r4, 128
 
-        // Copy 32 bytes. These cache lines were already preloaded.
-        .irp    offset, #0, #8, #16, #24
-        ldrd    r4, r5, [r1, \offset]
-        strd    r4, r5, [r0, \offset]
-        .endr
-        add     r1, r1, #32
-        add     r0, r0, #32
-        sub     r2, r2, #32
-4:      // Less than 32 left.
-        add     r2, r2, #32
-        tst     r2, #0x10
-        beq     5f
-        // Copy 16 bytes.
-        .irp    offset, #0, #8
-        ldrd    r4, r5, [r1, \offset]
-        strd    r4, r5, [r0, \offset]
-        .endr
-        add     r1, r1, #16
-        add     r0, r0, #16
+.L_no_pld_copy:
+	add	r4, #(128*PLD_OFS)
+	sub	r4, 128
+1:
+	vld1.64	{d0-d1}, [r1]!	// r1+=16
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!	// r1+=16
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	subs	r4, r4, 128
+	bge	1b
 
-5:      // Copy up to 15 bytes (count in r2).
-        movs    ip, r2, lsl #29
-        bcc     1f
-        // Copy 8 bytes.
-        ldrd    r4, r5, [r1], #8
-        strd    r4, r5, [r0], #8
-1:      bge         2f
-        // Copy 4 bytes.
-        ldr     r4, [r1], #4
-        str     r4, [r0], #4
-2:      // Copy 0 to 4 bytes.
-        lsls    r2, r2, #31
-        itt     ne
-        ldrbne  lr, [r1], #1
-        strbne  lr, [r0], #1
-        itttt   cs
-        ldrbcs  ip, [r1], #1
-        ldrbcs  lr, [r1]
-        strbcs  ip, [r0], #1
-        strbcs  lr, [r0]
+	tst	r4, 127
+	beq	.L_copy_done
 
+	mov	r2, r4
+	add	r2, #128
+	b	.L_rest_copy
+
+.L_cross_copy:
+	subs	ip, r1, r0
+	bls	1f		@ src < dst ? don't care
+	cmp	ip, 128		@ src >= dst+128 --> cross copy ok
+	blt	.L_normal_copy
+
+1:	push	{r6-r10}
+	mov	r2, r4
+	sub     r2, 128
+
+	add	r4, r1, 16
+	add	r5, r0, 16
+	add	r6, r1, 48
+	add	r7, r0, 48
+	add	r8, r1, 32
+	add	r9, r0, 32
+	mov	r10, 64
+2:
+	vld1.64	{d0-d1}, [r1], r10	// r1+=64
+	vst1.64	{d0-d1}, [r0], r10
+	vld1.64	{d0-d1}, [r4], r10
+	vst1.64	{d0-d1}, [r5], r10
+	vld1.64	{d0-d1}, [r6], r10
+	vst1.64	{d0-d1}, [r7], r10
+	vld1.64	{d0-d1}, [r8], r10
+	vst1.64	{d0-d1}, [r9], r10
+	pld     [r1, #(64*PLD_OFS)]
+	vld1.64	{d0-d1}, [r1], r10	// r1+=64
+	vst1.64	{d0-d1}, [r0], r10
+	vld1.64	{d0-d1}, [r4], r10
+	vst1.64	{d0-d1}, [r5], r10
+	vld1.64	{d0-d1}, [r6], r10
+	vst1.64	{d0-d1}, [r7], r10
+	vld1.64	{d0-d1}, [r8], r10
+	vst1.64	{d0-d1}, [r9], r10
+	pld     [r1, #(64*PLD_OFS)]
+
+	subs    r2, r2, 128
+	bge     2b
+	add	r4, r2, 128
+	pop	{r6-r10}
+	b	.L_no_pld_copy
+
+.L_rest_copy:
+	movs	ip, r2, lsl #25
+	bpl	32f
+	// copy 64 bytes
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+32:	movs	ip, r2, lsl #27
+	bcc	1f
+	// copy 32 bytes
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+1:	bge	2f
+	// copy 16 bytes
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+2:	movs	ip, r2, lsl #29
+	bcc	3f
+	// copy 8 bytes
+	ldr	r5, [r1], #4
+	str	r5, [r0], #4
+	ldr	r5, [r1], #4
+	str	r5, [r0], #4
+3:	bge	4f
+	// copy 4 bytes
+	ldr	r5, [r1], #4
+	str	r5, [r0], #4
+4:	lsls	ip, r2, #31
+	itt	mi
+	ldrbmi	r5, [r1], #1
+	strbmi	r5, [r0], #1
+	itttt	cs
+	ldrbcs	ip, [r1], #1
+	ldrbcs	r5, [r1]
+	strbcs	ip, [r0], #1
+	strbcs	r5, [r0]
+
+.L_copy_done:
         // Restore registers: optimized pop {r0, pc}
-        ldrd    r8, r9, [sp], #8
-        ldrd    r6, r7, [sp], #8
-        ldrd    r4, r5, [sp], #8
-        pop     {r0, pc}
+	ldrd    r4, r5, [sp], #8
+	pop     {r0, pc}
 
-.L_dst_not_word_aligned:
-        // Align dst to word.
-        rsb     ip, ip, #4
-        cmp     ip, #2
 
-        itt     gt
-        ldrbgt  lr, [r1], #1
-        strbgt  lr, [r0], #1
+.L_dst_not_64_aligned:
+	// align dst to 64
+	rsb	r4, r4, 64	@ if dst: 1 --> copy bytes to align: 64-1
+	cmp	r2, r4
+	itte	lt
+	movlt	r4, r2		@ if total < bytes --> bytes = total
+	movlt	r2, 0		@ if total < bytes --> total = 0
+	subge	r2, r4		@ else total >= bytes --> total -= bytes
 
-        itt     ge
-        ldrbge  lr, [r1], #1
-        strbge  lr, [r0], #1
+	// copy order 1 -> 2 -> 4 -> 8 ... because dst is unaligned
+	lsls	ip, r4, #31
+	itt	mi
+	ldrbmi	r5, [r1], #1
+	strbmi	r5, [r0], #1
+	itttt	cs
+	ldrbcs	ip, [r1], #1
+	ldrbcs	r5, [r1], #1
+	strbcs	ip, [r0], #1
+	strbcs	r5, [r0], #1
 
-        ldrb    lr, [r1], #1
-        strb    lr, [r0], #1
-
-        sub     r2, r2, ip
-
-        // Src is guaranteed to be at least word aligned by this point.
-        b       .L_word_aligned
+	movs	ip, r4, lsl #29
+	bge	1f
+	// copy 4 bytes
+	ldr	r5, [r1], 4
+	str	r5, [r0], 4
+1:	bcc	2f
+	// copy 8 bytes
+	ldr	r5, [r1], 4
+	str	r5, [r0], 4
+	ldr	r5, [r1], 4
+	str	r5, [r0], 4
+2:	movs	ip, r4, lsl #27
+	bge	3f
+	// copy 16 bytes
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+3:	bcc	4f
+	// copy 32 bytes
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+	vld1.64	{d0-d1}, [r1]!
+	vst1.64	{d0-d1}, [r0]!
+4:
+	b	.L_dst_aligned_done
 
         .cfi_endproc
 END(MEMCPY_BASE_ALIGNED)
