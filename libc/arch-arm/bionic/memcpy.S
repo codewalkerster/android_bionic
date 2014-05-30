@@ -29,6 +29,7 @@
 #include <machine/cpu-features.h>
 #include <machine/asm.h>
 
+//#if 0//defined(__ARM_NEON__) && !defined(ARCH_ARM_USE_NON_NEON_MEMCPY)
 #if defined(__ARM_NEON__) && !defined(ARCH_ARM_USE_NON_NEON_MEMCPY)
 
         .text
