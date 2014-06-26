@@ -33,9 +33,9 @@
 #ifndef MALLOC_DEBUG_COMMON_H
 #define MALLOC_DEBUG_COMMON_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <stdlib.h>
+
+#include "libc_logging.h"
 
 #define HASHTABLE_SIZE      1543
 #define BACKTRACE_SIZE      32
@@ -45,11 +45,15 @@ extern "C" {
 
 #define MAX_SIZE_T           (~(size_t)0)
 
+// This must match the alignment used by dlmalloc.
+#ifndef MALLOC_ALIGNMENT
+#define MALLOC_ALIGNMENT ((size_t)(2 * sizeof(void *)))
+#endif
+
 // =============================================================================
 // Structures
 // =============================================================================
 
-typedef struct HashEntry HashEntry;
 struct HashEntry {
     size_t slot;
     HashEntry* prev;
@@ -58,28 +62,28 @@ struct HashEntry {
     // fields above "size" are NOT sent to the host
     size_t size;
     size_t allocations;
-    intptr_t backtrace[0];
+    uintptr_t backtrace[0];
 };
 
-typedef struct HashTable HashTable;
 struct HashTable {
     size_t count;
     HashEntry* slots[HASHTABLE_SIZE];
 };
 
 /* Entry in malloc dispatch table. */
-typedef struct MallocDebug MallocDebug;
+typedef void* (*MallocDebugMalloc)(size_t);
+typedef void (*MallocDebugFree)(void*);
+typedef void* (*MallocDebugCalloc)(size_t, size_t);
+typedef void* (*MallocDebugRealloc)(void*, size_t);
+typedef void* (*MallocDebugMemalign)(size_t, size_t);
+typedef size_t (*MallocDebugMallocUsableSize)(const void*);
 struct MallocDebug {
-    /* Address of the actual malloc routine. */
-    void* (*malloc)(size_t bytes);
-    /* Address of the actual free routine. */
-    void  (*free)(void* mem);
-    /* Address of the actual calloc routine. */
-    void* (*calloc)(size_t n_elements, size_t elem_size);
-    /* Address of the actual realloc routine. */
-    void* (*realloc)(void* oldMem, size_t bytes);
-    /* Address of the actual memalign routine. */
-    void* (*memalign)(size_t alignment, size_t bytes);
+  MallocDebugMalloc malloc;
+  MallocDebugFree free;
+  MallocDebugCalloc calloc;
+  MallocDebugRealloc realloc;
+  MallocDebugMemalign memalign;
+  MallocDebugMallocUsableSize malloc_usable_size;
 };
 
 /* Malloc debugging initialization and finalization routines.
@@ -94,22 +98,18 @@ struct MallocDebug {
  * MallocDebugInit returns:
  *    0 on success, -1 on failure.
  */
-typedef int (*MallocDebugInit)(void);
-typedef void (*MallocDebugFini)(void);
+typedef int (*MallocDebugInit)();
+typedef void (*MallocDebugFini)();
 
 // =============================================================================
 // log functions
 // =============================================================================
 
 #define debug_log(format, ...)  \
-    __libc_android_log_print(ANDROID_LOG_DEBUG, "malloc_leak_check", (format), ##__VA_ARGS__ )
+    __libc_format_log(ANDROID_LOG_DEBUG, "malloc_leak_check", (format), ##__VA_ARGS__ )
 #define error_log(format, ...)  \
-    __libc_android_log_print(ANDROID_LOG_ERROR, "malloc_leak_check", (format), ##__VA_ARGS__ )
+    __libc_format_log(ANDROID_LOG_ERROR, "malloc_leak_check", (format), ##__VA_ARGS__ )
 #define info_log(format, ...)  \
-    __libc_android_log_print(ANDROID_LOG_INFO, "malloc_leak_check", (format), ##__VA_ARGS__ )
-
-#ifdef __cplusplus
-};  /* end of extern "C" */
-#endif
+    __libc_format_log(ANDROID_LOG_INFO, "malloc_leak_check", (format), ##__VA_ARGS__ )
 
 #endif  // MALLOC_DEBUG_COMMON_H

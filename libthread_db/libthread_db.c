@@ -99,13 +99,22 @@ _event_getmsg_helper(td_thrhandle_t const * handle, void * bkpt_addr)
         gEventMsgHandle.tid = gEventMsgHandle.pid;
         return 0x42;
     }
-#else
+#elif defined(__arm__)
     pc = (void *)ptrace(PTRACE_PEEKUSR, handle->tid, (void *)60 /* r15/pc */, NULL);
 
     if (pc == bkpt_addr) {
         // The hook function takes the id of the new thread as it's first param,
         // so grab it from r0.
         gEventMsgHandle.pid = ptrace(PTRACE_PEEKUSR, handle->tid, (void *)0 /* r0 */, NULL);
+        gEventMsgHandle.tid = gEventMsgHandle.pid;
+        return 0x42;
+    }
+#elif defined(__mips__)
+    pc = (void *)ptrace(PTRACE_PEEKUSR, handle->tid, (void *)(64*4) /* pc */, NULL);
+    if (pc == bkpt_addr) {
+        // The hook function takes the id of the new thread as it's first param,
+        // so grab it from a0
+        gEventMsgHandle.pid = ptrace(PTRACE_PEEKUSR, handle->tid, (void *)(4*4) /* a0 */, NULL);
         gEventMsgHandle.tid = gEventMsgHandle.pid;
         return 0x42;
     }
@@ -152,7 +161,7 @@ td_err_e
 td_thr_get_info(td_thrhandle_t const * handle, td_thrinfo_t * info)
 {
     info->ti_tid = handle->tid;
-    info->ti_lid = handle->tid; // Our pthreads uses kernel ids for tids
+    info->ti_lid = handle->tid;
     info->ti_state = TD_THR_SLEEP; /* XXX this needs to be read from /proc/<pid>/task/<tid>.
                                       This is only used to see if the thread is a zombie or not */
     return TD_OK;

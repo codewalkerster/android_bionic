@@ -16,8 +16,8 @@
  ***
  ****************************************************************************
  ****************************************************************************/
-#ifndef _ASM_I386_UNISTD_H_
-#define _ASM_I386_UNISTD_H_
+#ifndef _ASM_X86_UNISTD_32_H
+#define _ASM_X86_UNISTD_32_H
 #define __NR_restart_syscall 0
 #define __NR_exit 1
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
@@ -113,7 +113,7 @@
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 #define __NR_sethostname 74
 #define __NR_setrlimit 75
-#define __NR_getrlimit 76  
+#define __NR_getrlimit 76
 #define __NR_getrusage 77
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 #define __NR_gettimeofday 78
@@ -189,7 +189,7 @@
 #define __NR_bdflush 134
 #define __NR_sysfs 135
 #define __NR_personality 136
-#define __NR_afs_syscall 137  
+#define __NR_afs_syscall 137
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 #define __NR_setfsuid 138
 #define __NR_setfsgid 139
@@ -253,11 +253,11 @@
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 #define __NR_sigaltstack 186
 #define __NR_sendfile 187
-#define __NR_getpmsg 188  
-#define __NR_putpmsg 189  
+#define __NR_getpmsg 188
+#define __NR_putpmsg 189
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 #define __NR_vfork 190
-#define __NR_ugetrlimit 191  
+#define __NR_ugetrlimit 191
 #define __NR_mmap2 192
 #define __NR_truncate64 193
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
@@ -293,7 +293,7 @@
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 #define __NR_mincore 218
 #define __NR_madvise 219
-#define __NR_madvise1 219  
+#define __NR_madvise1 219
 #define __NR_getdents64 220
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 #define __NR_fcntl64 221
@@ -417,9 +417,35 @@
 #define __NR_utimensat 320
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 #define __NR_signalfd 321
-#define __NR_timerfd 322
+#define __NR_timerfd_create 322
 #define __NR_eventfd 323
 #define __NR_fallocate 324
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
-#define __NR_perf_event_open 364
+#define __NR_timerfd_settime 325
+#define __NR_timerfd_gettime 326
+#define __NR_signalfd4 327
+#define __NR_eventfd2 328
+/* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
+#define __NR_epoll_create1 329
+#define __NR_dup3 330
+#define __NR_pipe2 331
+#define __NR_inotify_init1 332
+/* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
+#define __NR_preadv 333
+#define __NR_pwritev 334
+#define __NR_rt_tgsigqueueinfo 335
+#define __NR_perf_event_open 336
+/* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
+#define __NR_recvmmsg 337
+#define __NR_fanotify_init 338
+#define __NR_fanotify_mark 339
+#define __NR_prlimit64 340
+/* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
+#define __NR_name_to_handle_at 341
+#define __NR_open_by_handle_at 342
+#define __NR_clock_adjtime 343
+#define __NR_syncfs 344
+/* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
+#define __NR_sendmmsg 345
+#define __NR_setns 346
 #endif

@@ -44,7 +44,8 @@ struct atexit *__atexit;
  * Function pointers are stored in a linked list of pages. The list
  * is initially empty, and pages are allocated on demand. The first
  * function pointer in the first allocated page (the last one in
- * the linked list) is reserved for the cleanup function.
+ * the linked list) was reserved for the cleanup function.
+ * TODO: switch to the regular FreeBSD/NetBSD atexit implementation.
  *
  * Outside the following functions, all pages are mprotect()'ed
  * to prevent unintentional/malicious corruption.
@@ -104,17 +105,6 @@ unlock:
 	return (ret);
 }
 
-#ifdef CRT_LEGACY_WORKAROUND
-/*
- * Register a function to be performed at exit.
- */
-int
-atexit(void (*func)(void))
-{
-	return (__cxa_atexit((void (*)(void *))func, NULL, NULL));
-}
-#endif
-
 /*
  * Call all handlers registered with __cxa_atexit() for the shared
  * object owning 'dso'.
@@ -131,6 +121,7 @@ __cxa_finalize(void *dso)
 	if (__atexit_invalid)
 		return;
 
+	_ATEXIT_LOCK();
 	call_depth++;
 
 	for (p = __atexit; p != NULL; p = p->next) {
@@ -149,6 +140,7 @@ __cxa_finalize(void *dso)
 				p->fns[n].fn_ptr.cxa_func = NULL;
 				mprotect(p, pgsize, PROT_READ);
 			}
+			_ATEXIT_UNLOCK();
 #if ANDROID
                         /* it looks like we should always call the function
                          * with an argument, even if dso is not NULL. Otherwise
@@ -162,6 +154,7 @@ __cxa_finalize(void *dso)
 			else
 				(*fn.fn_ptr.std_func)();
 #endif /* !ANDROID */
+			_ATEXIT_LOCK();
 		}
 	}
 
@@ -178,43 +171,5 @@ __cxa_finalize(void *dso)
 		}
 		__atexit = NULL;
 	}
-}
-
-/*
- * Register the cleanup function
- */
-void
-__atexit_register_cleanup(void (*func)(void))
-{
-	struct atexit *p;
-	int pgsize = getpagesize();
-
-	if (pgsize < (int)sizeof(*p))
-		return;
-	_ATEXIT_LOCK();
-	p = __atexit;
-	while (p != NULL && p->next != NULL)
-		p = p->next;
-	if (p == NULL) {
-		p = mmap(NULL, pgsize, PROT_READ | PROT_WRITE,
-		    MAP_ANON | MAP_PRIVATE, -1, 0);
-		if (p == MAP_FAILED)
-			goto unlock;
-		p->ind = 1;
-		p->max = (pgsize - ((char *)&p->fns[0] - (char *)p)) /
-		    sizeof(p->fns[0]);
-		p->next = NULL;
-		__atexit = p;
-		if (__atexit_invalid)
-			__atexit_invalid = 0;
-	} else {
-		if (mprotect(p, pgsize, PROT_READ | PROT_WRITE))
-			goto unlock;
-	}
-	p->fns[0].fn_ptr.std_func = func;
-	p->fns[0].fn_arg = NULL;
-	p->fns[0].fn_dso = NULL;
-	mprotect(p, pgsize, PROT_READ);
-unlock:
 	_ATEXIT_UNLOCK();
 }

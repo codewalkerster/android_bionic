@@ -1,42 +1,45 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES:= \
-	arch/$(TARGET_ARCH)/begin.S \
-	linker.c \
-	linker_environ.c \
-	linker_format.c \
-	rt.c \
-	dlfcn.c \
-	debugger.c
+ifeq ($(TARGET_ARCH),x86)
+    linker_begin_extension := c
+else
+    linker_begin_extension := S
+endif
 
-LOCAL_LDFLAGS := -shared
+LOCAL_SRC_FILES:= \
+    arch/$(TARGET_ARCH)/begin.$(linker_begin_extension) \
+    debugger.cpp \
+    dlfcn.cpp \
+    linker.cpp \
+    linker_environ.cpp \
+    linker_phdr.cpp \
+    rt.cpp
+
+LOCAL_LDFLAGS := -shared -Wl,--exclude-libs,ALL
 
 LOCAL_CFLAGS += -fno-stack-protector \
         -Wstrict-overflow=5 \
-        -fvisibility=hidden
+        -fvisibility=hidden \
+        -Wall -Wextra -Werror
 
-# Set LINKER_DEBUG to either 1 or 0
-#
-LOCAL_CFLAGS += -DLINKER_DEBUG=0
-
-# we need to access the Bionic private header <bionic_tls.h>
-# in the linker; duplicate the HAVE_ARM_TLS_REGISTER definition
-# from the libc build
-ifeq ($(TARGET_ARCH)-$(ARCH_ARM_HAVE_TLS_REGISTER),arm-true)
-    LOCAL_CFLAGS += -DHAVE_ARM_TLS_REGISTER
-endif
-LOCAL_CFLAGS += -I$(LOCAL_PATH)/../libc/private
+# We need to access Bionic private headers in the linker.
+LOCAL_CFLAGS += -I$(LOCAL_PATH)/../libc/
 
 ifeq ($(TARGET_ARCH),arm)
-LOCAL_CFLAGS += -DANDROID_ARM_LINKER
-else
-  ifeq ($(TARGET_ARCH),x86)
+    LOCAL_CFLAGS += -DANDROID_ARM_LINKER
+endif
+
+ifeq ($(TARGET_ARCH),x86)
     LOCAL_CFLAGS += -DANDROID_X86_LINKER
-  endif
+endif
+
+ifeq ($(TARGET_ARCH),mips)
+    LOCAL_CFLAGS += -DANDROID_MIPS_LINKER
 endif
 
 LOCAL_MODULE:= linker
+LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 
 LOCAL_STATIC_LIBRARIES := libc_nomalloc
 
@@ -57,8 +60,19 @@ LOCAL_MODULE_SUFFIX := $(TARGET_EXECUTABLE_SUFFIX)
 # just for this module
 LOCAL_NO_CRT := true
 
+# TODO: split out the asflags.
+LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
+
 include $(BUILD_SYSTEM)/dynamic_binary.mk
 
+# See build/core/executable.mk
+$(linked_module): PRIVATE_TARGET_GLOBAL_LD_DIRS := $(TARGET_GLOBAL_LD_DIRS)
+$(linked_module): PRIVATE_TARGET_GLOBAL_LDFLAGS := $(TARGET_GLOBAL_LDFLAGS)
+$(linked_module): PRIVATE_TARGET_FDO_LIB := $(TARGET_FDO_LIB)
+$(linked_module): PRIVATE_TARGET_LIBGCC := $(TARGET_LIBGCC)
+$(linked_module): PRIVATE_TARGET_CRTBEGIN_DYNAMIC_O := $(TARGET_CRTBEGIN_DYNAMIC_O)
+$(linked_module): PRIVATE_TARGET_CRTBEGIN_STATIC_O := $(TARGET_CRTBEGIN_STATIC_O)
+$(linked_module): PRIVATE_TARGET_CRTEND_O := $(TARGET_CRTEND_O)
 $(linked_module): $(TARGET_CRTBEGIN_STATIC_O) $(all_objects) $(all_libraries) $(TARGET_CRTEND_O)
 	$(transform-o-to-static-executable)
 	@echo "target PrefixSymbols: $(PRIVATE_MODULE) ($@)"
