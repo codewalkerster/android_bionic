@@ -31,141 +31,234 @@
 
 #if defined(__ARM_NEON__) && !defined(ARCH_ARM_USE_NON_NEON_MEMCPY)
 
-        .text
-        .fpu    neon
+	.text
+	.fpu	neon
+	.arm
+	.arch	armv7-a
 
 #ifdef HAVE_32_BYTE_CACHE_LINE
 /* a prefetch distance of 2 cache-lines */
-#define CACHE_LINE_SIZE     32
-#define PREFETCH_DISTANCE   (CACHE_LINE_SIZE*2)
+#define CACHE_LINE_SIZE		32
+#define PREFETCH_DISTANCE	(CACHE_LINE_SIZE*2)
 #else
-/* a prefetch distance of 4 cache-lines works best experimentally */
-#define CACHE_LINE_SIZE     64
-#define PREFETCH_DISTANCE   (CACHE_LINE_SIZE*4)
+/* a prefetch distance of 8 cache-lines works best experimentally */
+#define CACHE_LINE_SIZE		64
+#define PREFETCH_OFFSET		8
+#define PREFETCH_DISTANCE	(CACHE_LINE_SIZE*PREFETCH_OFFSET)
 #endif
+#define CROSS_BOUND		(64*1024/128)
+#define CROSS_BOUND_SIZE	(64*1024)
+
+#if defined(ARCH_ARM_USE_MEMCPY_ALIGNMENT)
+#ifndef MEMCPY_ALIGN_BOUND
+#define MEMCPY_ALIGN_BOUND	(32*1024)
+#endif
+#ifndef MEMCPY_ALIGNMENT
+#define MEMCPY_ALIGNMENT	(64)
+#endif
+#endif
+
+	dst	.req	r0
+	src	.req	r1
+	cnt	.req	r2
+	tmp1	.req	r3
+	tmp2	.req	ip
+	csrc1	.req	r4
+	csrc2	.req	r6
+	csrc3	.req	r8
+	cdst1	.req	r3
+	cdst2	.req	r5
+	cdst3	.req	r7
+	coff	.req	r9
+	ccnt1	.req	r10
+	ccnt2	.req	r11
 
 ENTRY(memcpy)
-        .save       {r0, lr}
-        /* start preloading as early as possible */
-        pld         [r1, #(CACHE_LINE_SIZE*0)]
-        stmfd       sp!, {r0, lr}
-        pld         [r1, #(CACHE_LINE_SIZE*1)]
-
-        /* do we have at least 16-bytes to copy (needed for alignment below) */
-        cmp         r2, #16
-        blo         5f
-
-        /* align destination to cache-line for the write-buffer */
-        rsb         r3, r0, #0
-        ands        r3, r3, #0xF
-        beq         0f
-
-        /* copy up to 15-bytes (count in r3) */
-        sub         r2, r2, r3
-        movs        ip, r3, lsl #31
-        ldrmib      lr, [r1], #1
-        strmib      lr, [r0], #1
-        ldrcsb      ip, [r1], #1
-        ldrcsb      lr, [r1], #1
-        strcsb      ip, [r0], #1
-        strcsb      lr, [r0], #1
-        movs        ip, r3, lsl #29
-        bge         1f
-        // copies 4 bytes, destination 32-bits aligned
-        vld4.8      {d0[0], d1[0], d2[0], d3[0]}, [r1]!
-        vst4.8      {d0[0], d1[0], d2[0], d3[0]}, [r0, :32]!
-1:      bcc         2f
-        // copies 8 bytes, destination 64-bits aligned
-        vld1.8      {d0}, [r1]!
-        vst1.8      {d0}, [r0, :64]!
-2:
-
-0:      /* preload immediately the next cache line, which we may need */
-        pld         [r1, #(CACHE_LINE_SIZE*0)]
-        pld         [r1, #(CACHE_LINE_SIZE*1)]
-
-#ifdef HAVE_32_BYTE_CACHE_LINE
-        /* make sure we have at least 32 bytes to copy */
-        subs        r2, r2, #32
-        blo         4f
-
-        /* preload all the cache lines we need.
-         * NOTE: the number of pld below depends on PREFETCH_DISTANCE,
-         * ideally would would increase the distance in the main loop to
-         * avoid the goofy code below. In practice this doesn't seem to make
-         * a big difference.
-         */
-        pld         [r1, #(PREFETCH_DISTANCE)]
-
-1:      /* The main loop copies 32 bytes at a time */
-        vld1.8      {d0  - d3},   [r1]!
-        pld         [r1, #(PREFETCH_DISTANCE)]
-        subs        r2, r2, #32
-        vst1.8      {d0  - d3},   [r0, :128]!
-        bhs         1b
-#else
-        /* make sure we have at least 64 bytes to copy */
-        subs        r2, r2, #64
-        blo         2f
-
-        /* preload all the cache lines we need.
-         * NOTE: the number of pld below depends on PREFETCH_DISTANCE,
-         * ideally would would increase the distance in the main loop to
-         * avoid the goofy code below. In practice this doesn't seem to make
-         * a big difference.
-         */
-        pld         [r1, #(CACHE_LINE_SIZE*2)]
-        pld         [r1, #(CACHE_LINE_SIZE*3)]
-        pld         [r1, #(PREFETCH_DISTANCE)]
-
-1:      /* The main loop copies 64 bytes at a time */
-        vld1.8      {d0  - d3},   [r1]!
-        vld1.8      {d4  - d7},   [r1]!
-        pld         [r1, #(PREFETCH_DISTANCE)]
-        subs        r2, r2, #64
-        vst1.8      {d0  - d3},   [r0, :128]!
-        vst1.8      {d4  - d7},   [r0, :128]!
-        bhs         1b
-
-2:      /* fix-up the remaining count and make sure we have >= 32 bytes left */
-        add         r2, r2, #64
-        subs        r2, r2, #32
-        blo         4f
-
-3:      /* 32 bytes at a time. These cache lines were already preloaded */
-        vld1.8      {d0 - d3},  [r1]!
-        subs        r2, r2, #32
-        vst1.8      {d0 - d3},  [r0, :128]!
-        bhs         3b
+#if defined(ARCH_ARM_USE_MEMCPY_ALIGNMENT)
+	cmp	cnt, #MEMCPY_ALIGN_BOUND
+	blt	nmemcpy
+	cmp	cnt, #CROSS_BOUND_SIZE
+	beq	nmemcpy
+	ands	tmp1, dst, #(MEMCPY_ALIGNMENT-1)
+	bne	make_align
 #endif
-4:      /* less than 32 left */
-        add         r2, r2, #32
-        tst         r2, #0x10
-        beq         5f
-        // copies 16 bytes, 128-bits aligned
-        vld1.8      {d0, d1}, [r1]!
-        vst1.8      {d0, d1}, [r0, :128]!
-
-5:      /* copy up to 15-bytes (count in r2) */
-        movs        ip, r2, lsl #29
-        bcc         1f
-        vld1.8      {d0}, [r1]!
-        vst1.8      {d0}, [r0]!
-1:      bge         2f
-        vld4.8      {d0[0], d1[0], d2[0], d3[0]}, [r1]!
-        vst4.8      {d0[0], d1[0], d2[0], d3[0]}, [r0]!
-2:      movs        ip, r2, lsl #31
-        ldrmib      r3, [r1], #1
-        ldrcsb      ip, [r1], #1
-        ldrcsb      lr, [r1], #1
-        strmib      r3, [r0], #1
-        strcsb      ip, [r0], #1
-        strcsb      lr, [r0], #1
-
-        ldmfd       sp!, {r0, lr}
-        bx          lr
+	b	nmemcpy
 END(memcpy)
 
+#if defined(ARCH_ARM_USE_MEMCPY_ALIGNMENT)
+make_align:
+	push	{dst, ccnt1, ccnt2, lr}
+	/* backup cnt */
+	mov	ccnt1, cnt
+	mov	tmp2, #MEMCPY_ALIGNMENT
+	/* cnt for alignment */
+	sub	cnt, tmp2, tmp1
+	/* backup aligned cnt */
+	mov	ccnt2, cnt
+	bl	nmemcpy
+	/* make aligned address and cnt */
+	add	dst, dst, ccnt2
+	sub	cnt, ccnt1, ccnt2
+	bl	nmemcpy
+	mov	cnt, ccnt1
+	pop	{dst, ccnt1, ccnt2, lr}
+	bx	lr
+#endif
+
+nmemcpy:
+	push		{dst}
+/* start preloading as early as possible */
+	pld		[src, #(CACHE_LINE_SIZE*0)]
+	cmp		cnt, #4
+	blt		.memcpy_lt4
+	cmp		cnt, #16
+	blt		.memcpy_lt16
+	cmp		cnt, #32
+	blt		.memcpy_16
+	pld		[src, #(CACHE_LINE_SIZE*1)]
+	cmp		cnt, #128
+	blt		.memcpy_32
+	pld		[src, #(CACHE_LINE_SIZE*2)]
+	pld		[src, #(CACHE_LINE_SIZE*3)]
+	mov		tmp2, cnt, lsr #7
+	cmp		tmp2, #PREFETCH_OFFSET
+	ble		.memcpy_copy_128_loop_nopld
+	sub		tmp2, #PREFETCH_OFFSET
+	pld		[src, #(CACHE_LINE_SIZE*4)]
+	pld		[src, #(CACHE_LINE_SIZE*5)]
+	pld		[src, #(CACHE_LINE_SIZE*6)]
+	pld		[src, #(CACHE_LINE_SIZE*7)]
+	pld		[src, #PREFETCH_DISTANCE]
+	/* check cross copy boundary */
+	subs		tmp1, src, dst
+	bls		.check_cross_copy_boundary
+	cmp		tmp1, #128
+	bls		.memcpy_copy_128_loop
+.check_cross_copy_boundary:
+	add		tmp1, tmp2, #PREFETCH_OFFSET
+	cmp		tmp1, #CROSS_BOUND
+	beq		.memcpy_copy_128_cross
+
+.memcpy_copy_128_loop:
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	pld		[src, #PREFETCH_DISTANCE]
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	pld		[src, #PREFETCH_DISTANCE]
+	subs		tmp2, tmp2, #1
+	bne		.memcpy_copy_128_loop
+	mov		tmp2, #PREFETCH_OFFSET
+	b		.memcpy_copy_128_loop_nopld
+
+.memcpy_copy_128_cross:
+	push		{r4-r9}
+	add		csrc1, src, #16
+	add		cdst1, dst, #16
+	add		csrc2, src, #32
+	add		cdst2, dst, #32
+	add		csrc3, src, #48
+	add		cdst3, dst, #48
+	mov		coff, #64
+.memcpy_copy_128_cross_loop:
+	vld1.64		{d0-d1}, [src], coff
+	vst1.64		{d0-d1}, [dst], coff
+	vld1.64		{d0-d1}, [csrc1], coff
+	vst1.64		{d0-d1}, [cdst1], coff
+	vld1.64		{d0-d1}, [csrc3], coff
+	vst1.64		{d0-d1}, [cdst3], coff
+	vld1.64		{d0-d1}, [csrc2], coff
+	vst1.64		{d0-d1}, [cdst2], coff
+	pld		[r1, #PREFETCH_DISTANCE]
+	vld1.64		{d0-d1}, [src], coff
+	vst1.64		{d0-d1}, [dst], coff
+	vld1.64		{d0-d1}, [csrc1], coff
+	vst1.64		{d0-d1}, [cdst1], coff
+	vld1.64		{d0-d1}, [csrc3], coff
+	vst1.64		{d0-d1}, [cdst3], coff
+	vld1.64		{d0-d1}, [csrc2], coff
+	vst1.64		{d0-d1}, [cdst2], coff
+	pld		[r1, #PREFETCH_DISTANCE]
+	subs		tmp2, tmp2, #1
+	bne		.memcpy_copy_128_cross_loop
+	mov		tmp2, #PREFETCH_OFFSET
+	pop		{r4-r9}
+
+.memcpy_copy_128_loop_nopld:
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	subs		tmp2, tmp2, #1
+	bne		.memcpy_copy_128_loop_nopld
+	ands		cnt, cnt, #0x7f
+	beq		.memcpy_end
+	cmp		cnt, #32
+	blt		.memcpy_16
+.memcpy_32:
+	mov		tmp2, cnt, lsr #5
+.memcpy_copy_32_loop:
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	subs		tmp2, tmp2, #1
+	bne		.memcpy_copy_32_loop
+	ands		cnt, cnt, #0x1f
+	beq		.memcpy_end
+.memcpy_16:
+	subs            cnt, cnt, #16
+	blt		.memcpy_lt16
+	vld1.64		{d0-d1}, [src]!
+	vst1.64		{d0-d1}, [dst]!
+	beq		.memcpy_end
+.memcpy_lt16:
+	movs		tmp2, cnt, lsl #29
+	bcc		.memcpy_skip8
+	ldr		tmp1, [src], #4
+	str		tmp1, [dst], #4
+	ldr		tmp2, [src], #4
+	str		tmp2, [dst], #4
+.memcpy_skip8:
+	bpl		.memcpy_lt4
+	ldr		tmp1, [src], #4
+	str		tmp1, [dst], #4
+.memcpy_lt4:
+	movs		cnt, cnt, lsl #31
+	bcc		.memcpy_lt2
+	ldrh		tmp1, [src], #2
+	strh		tmp1, [dst], #2
+.memcpy_lt2:
+	bpl		.memcpy_end
+	ldrb		tmp2, [src], #1
+	strb		tmp2, [dst], #1
+.memcpy_end:
+	pop		{dst}
+	bx		lr
 
 #else   /* __ARM_ARCH__ < 7 */
 

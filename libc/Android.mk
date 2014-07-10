@@ -381,6 +381,7 @@ libc_common_src_files += \
 	arch-arm/bionic/memcmp.S \
 	arch-arm/bionic/memcmp16.S \
 	arch-arm/bionic/memcpy.S \
+	arch-arm/bionic/memmove.S \
 	arch-arm/bionic/memset.S \
 	arch-arm/bionic/setjmp.S \
 	arch-arm/bionic/sigsetjmp.S \
@@ -388,8 +389,6 @@ libc_common_src_files += \
 	arch-arm/bionic/strcpy.S \
 	arch-arm/bionic/strcmp.S \
 	arch-arm/bionic/syscall.S \
-	string/memmove.c.arm \
-	string/bcopy.c \
 	string/strncmp.c \
 	unistd/socketcalls.c
 
@@ -528,6 +527,12 @@ endif
 #
 ifneq ($(BOARD_MALLOC_ALIGNMENT),)
   libc_common_cflags += -DMALLOC_ALIGNMENT=$(BOARD_MALLOC_ALIGNMENT)
+endif
+
+ifeq ($(ARCH_ARM_USE_MEMCPY_ALIGNMENT),true)
+  libc_common_cflags += -DMEMCPY_ALIGNMENT=$(BOARD_MEMCPY_ALIGNMENT)
+  libc_common_cflags += -DMEMCPY_ALIGN_BOUND=$(BOARD_MEMCPY_ALIGN_BOUND)
+  libc_common_cflags += -DARCH_ARM_USE_MEMCPY_ALIGNMENT
 endif
 
 ifeq ($(TARGET_ARCH),arm)

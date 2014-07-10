@@ -160,7 +160,8 @@ ifeq ($(TARGET_ARCH),arm)
 	src/s_scalbln.c \
 	src/s_scalbn.c \
 	src/s_scalbnf.c \
-	src/e_sqrtf.c
+	src/e_sqrtf.c \
+	arm/e_pow.S
 
   libm_common_includes = $(LOCAL_PATH)/arm
 endif
