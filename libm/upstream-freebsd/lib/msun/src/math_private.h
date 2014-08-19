@@ -723,9 +723,18 @@ irintl(long double x)
 #define	__ieee754_remainderf remainderf
 #define	__ieee754_scalbf scalbf
 
-/* fdlibm kernel function */
-int	__kernel_rem_pio2(double*,double*,int,int,int);
-
+/* float precision kernel functions */
+#define LIBM_NEON_OPTIMIZATION
+#if defined(LIBM_NEON_OPTIMIZATION)
+double __full_ieee754_pow(double,double);
+#ifndef INLINE_REM_PIO2
+int    __ieee754_rem_pio2(double,double*) __attribute__((pcs("aapcs-vfp")));
+#endif
+double __kernel_sin(double,double,int) __attribute__((pcs("aapcs-vfp")));
+double __kernel_cos(double,double) __attribute__((pcs("aapcs-vfp")));
+double __kernel_tan(double,double,int) __attribute__((pcs("aapcs-vfp")));
+int    __kernel_rem_pio2(double*,double*,int,int,int) __attribute__((pcs("aapcs-vfp")));
+#else
 /* double precision kernel functions */
 #ifndef INLINE_REM_PIO2
 int	__ieee754_rem_pio2(double,double*);
@@ -733,12 +742,14 @@ int	__ieee754_rem_pio2(double,double*);
 double	__kernel_sin(double,double,int);
 double	__kernel_cos(double,double);
 double	__kernel_tan(double,double,int);
+/* fdlibm kernel function */
+int	__kernel_rem_pio2(double*,double*,int,int,int);
+#endif
+
 double	__ldexp_exp(double,int);
 #ifdef _COMPLEX_H
 double complex __ldexp_cexp(double complex,int);
 #endif
-
-/* float precision kernel functions */
 #ifndef INLINE_REM_PIO2F
 int	__ieee754_rem_pio2f(float,double*);
 #endif
@@ -755,6 +766,7 @@ float	__ldexp_expf(float,int);
 #ifdef _COMPLEX_H
 float complex __ldexp_cexpf(float complex,int);
 #endif
+
 
 /* long double precision kernel functions */
 long double __kernel_sinl(long double, long double, int);
