@@ -187,9 +187,9 @@ libc_common_src_files += \
     bionic/__memcpy_chk.cpp \
     bionic/__memmove_chk.cpp \
     bionic/__memset_chk.cpp \
-    bionic/__strcat_chk.cpp \
     bionic/__strchr_chk.cpp \
     bionic/__strcpy_chk.cpp \
+	string/strcat.c \
     bionic/__strlcat_chk.cpp \
     bionic/__strlcpy_chk.cpp \
     bionic/__strlen_chk.cpp \
@@ -371,7 +371,7 @@ libc_common_src_files += \
 	string/strncpy.c \
 	bionic/strchr.cpp \
 	string/strrchr.c \
-	bionic/memchr.c \
+    arch-arm/bionic/memchr.S \
 	bionic/memrchr.c \
 	string/index.c \
 	bionic/strnlen.c \
@@ -917,6 +917,7 @@ LOCAL_REQUIRED_MODULES := tzdata
 LOCAL_SHARED_LIBRARIES := libdl
 LOCAL_WHOLE_STATIC_LIBRARIES := libc_common
 LOCAL_SYSTEM_SHARED_LIBRARIES :=
+LOCAL_ARM_MODE := arm
 
 include $(BUILD_SHARED_LIBRARY)
 
@@ -953,6 +954,7 @@ LOCAL_SHARED_LIBRARIES := libc libdl
 LOCAL_WHOLE_STATIC_LIBRARIES := libc_common
 LOCAL_SYSTEM_SHARED_LIBRARIES :=
 LOCAL_ALLOW_UNDEFINED_SYMBOLS := true
+LOCAL_ARM_MODE := arm
 
 # Don't install on release build
 LOCAL_MODULE_TAGS := eng debug

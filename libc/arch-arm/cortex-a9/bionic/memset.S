@@ -73,50 +73,48 @@ END(bzero)
 
 /* memset() returns its first argument.  */
 ENTRY(memset)
-        .cfi_startproc
+    and     r1, r1, #0xff
+    cmp     r2, #0
+    bxeq    lr
+    orr     r1, r1, r1, lsl #8
+    tst     r0, #7
+    mov     r3, r0
+    orr     r1, r1, r1, lsl #16
+    beq     .Lmemset_align8
+.Lmemset_make_align:
+    strb    r1, [r3], #1
+    subs    r2, r2, #1
+    bxeq    lr
+    tst     r3, #7
+    bne     .Lmemset_make_align
 
-        # The neon memset only wins for less than 132.
-        cmp         r2, #132
-        bhi         __memset_large_copy
-
-        stmfd       sp!, {r0}
-        .save       {r0}
-        .cfi_def_cfa_offset 4
-        .cfi_rel_offset r0, 0
-
-        vdup.8      q0, r1
-
-        /* make sure we have at least 32 bytes to write */
-        subs        r2, r2, #32
-        blo         2f
-        vmov        q1, q0
-
-1:      /* The main loop writes 32 bytes at a time */
-        subs        r2, r2, #32
-        vst1.8      {d0 - d3}, [r0]!
-        bhs         1b
-
-2:      /* less than 32 left */
-        add         r2, r2, #32
-        tst         r2, #0x10
-        beq         3f
-
-        // writes 16 bytes, 128-bits aligned
-        vst1.8      {d0, d1}, [r0]!
-3:      /* write up to 15-bytes (count in r2) */
-        movs        ip, r2, lsl #29
-        bcc         1f
-        vst1.8      {d0}, [r0]!
-1:      bge         2f
-        vst1.32     {d0[0]}, [r0]!
-2:      movs        ip, r2, lsl #31
-        strmib      r1, [r0], #1
-        strcsb      r1, [r0], #1
-        strcsb      r1, [r0], #1
-        ldmfd       sp!, {r0}
-        bx          lr
-
-        .cfi_endproc
+.Lmemset_align8:
+    cmp     r2, #16
+    mov     r12, r1
+    blt     .Lmemset_less16
+    push    {r4, lr}
+    mov     r4, r1
+    mov     lr, r1
+.Lmemset_loop32:
+    subs    r2, r2, #32
+    stmhsia r3!, {r1, r4, r12, lr}
+    stmhsia r3!, {r1, r4, r12, lr}
+    bhs     .Lmemset_loop32
+    adds    r2, r2, #32
+    popeq   {r4, pc}
+    tst     r2, #16
+    stmneia r3!, {r1, r4, r12, lr}
+    pop     {r4, lr}
+    subs    r2, #16
+    bxeq    lr
+.Lmemset_less16:
+    movs    r2, r2, lsl #29
+    stmcsia r3!, {r1, r12}
+    strmi   r1, [r3], #4
+    movs    r2, r2, lsl #2
+    strcsh  r1, [r3], #2
+    strmib  r1, [r3], #1
+    bx      lr
 END(memset)
 
 ENTRY(__memset_large_copy)

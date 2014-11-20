@@ -45,7 +45,13 @@ strcat(char *s, const char *append)
 {
 	char *save = s;
 
-	for (; *s; ++s);
-	while ((*s++ = *append++) != '\0');
-	return(save);
+#if 0
+    for (; *s; ++s);
+    while ((*s++ = *append++) != '\0');
+    return(save);
+#else
+    s += strlen(s);
+    strcpy(s, append);
+    return save;
+#endif
 }

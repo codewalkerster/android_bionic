@@ -44,8 +44,12 @@ strncat(char *dst, const char *src, size_t n)
 		char *d = dst;
 		const char *s = src;
 
+    #if 0
 		while (*d != 0)
 			d++;
+    #else
+        d += strlen(d);
+    #endif
 		do {
 			if ((*d = *s++) == 0)
 				break;

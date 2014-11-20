@@ -105,6 +105,7 @@ struct otp_info {
 #define OTPLOCK _IOR('M', 16, struct otp_info)
 #define ECCGETLAYOUT _IOR('M', 17, struct nand_ecclayout)
 #define ECCGETSTATS _IOR('M', 18, struct mtd_ecc_stats)
+#define BLKWIPEPART _IO('M',127)
 /* WARNING: DO NOT EDIT, AUTO-GENERATED CODE - SEE TOP FOR INSTRUCTIONS */
 #define MTDFILEMODE _IO('M', 19)
 struct nand_oobinfo {
