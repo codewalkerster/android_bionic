@@ -11,8 +11,16 @@ libc_common_src_files_arm := \
 libc_bionic_src_files_arm := \
     bionic/mmap.cpp
 
+
+ifeq ($(ARCH_ARM_HAVE_ARMV7A),true)
 libc_common_src_files_arm += \
-    bionic/memchr.c \
+    arch-arm/bionic/memchr.S
+else
+libc_common_src_files_arm += \
+    bionic/memchr.c
+endif
+
+libc_common_src_files_arm += \
     bionic/memrchr.c \
     bionic/strchr.cpp \
     bionic/strnlen.c \
@@ -48,13 +56,20 @@ libc_common_cflags_arm := -DSOFTFLOAT
 
 ##########################################
 ### CPU specific source files
+ifeq ($(ARCH_ARM_HAVE_NEON), true)
+libc_bionic_src_files_arm += \
+    arch-arm/bionic/memcmp_neon.S
+else
+libc_bionic_src_files_arm += \
+    arch-arm/bionic/memcmp.S
+endif
+
 libc_bionic_src_files_arm += \
     arch-arm/bionic/abort_arm.S \
     arch-arm/bionic/atomics_arm.c \
     arch-arm/bionic/__bionic_clone.S \
     arch-arm/bionic/_exit_with_stack_teardown.S \
     arch-arm/bionic/libgcc_compat.c \
-    arch-arm/bionic/memcmp.S \
     arch-arm/bionic/_setjmp.S \
     arch-arm/bionic/setjmp.S \
     arch-arm/bionic/sigsetjmp.S \
